@@ -7,8 +7,8 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "build": "expo export:web",
-    "heroku-postbuild": "expo export:web"
+    "build": "npx expo export --platform web",
+    "heroku-postbuild": "npx expo export --platform web"
   },
   "dependencies": {
     "@expo/webpack-config": "^19.0.0",
