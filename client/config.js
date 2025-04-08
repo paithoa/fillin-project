@@ -1,19 +1,24 @@
 // Change this to your actual backend URL in production
 import { Platform } from 'react-native';
 
-// Automatically choose the correct URL based on platform
+// Automatically choose the correct URL based on platform and environment
 let baseUrl;
-if (Platform.OS === 'ios') {
-  baseUrl = 'http://localhost:5001'; // iOS simulator can use localhost
-} else if (Platform.OS === 'android') {
-  baseUrl = 'http://10.0.2.2:5001'; // Android emulator needs this special IP
+if (__DEV__) {
+  // Development environment
+  if (Platform.OS === 'ios') {
+    baseUrl = 'http://localhost:5001'; // iOS simulator can use localhost
+  } else if (Platform.OS === 'android') {
+    baseUrl = 'http://10.0.2.2:5001'; // Android emulator needs this special IP
+  } else {
+    baseUrl = 'http://localhost:5001'; // Fallback
+  }
 } else {
-  baseUrl = 'http://localhost:5001'; // Fallback
+  // Production environment
+  baseUrl = 'https://sconnect-api-469-55a2ba13b4c8.herokuapp.com';
 }
 
-// You can override this manually if needed (e.g., for physical devices)
-// For physical devices, use your computer's network IP, e.g., 'http://192.168.1.100:5001'
-export const API_URL = 'http://localhost:5001';
+// Export the API URL
+export const API_URL = baseUrl;
 
 // Dummy data for posts if API fails
 export const DUMMY_POSTS = [

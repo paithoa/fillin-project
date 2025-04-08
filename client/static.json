@@ -1,0 +1,12 @@
+{
+  "root": "web-build/",
+  "routes": {
+    "/**": "index.html"
+  },
+  "https_only": true,
+  "headers": {
+    "/**": {
+      "Cache-Control": "public, max-age=0, must-revalidate"
+    }
+  }
+} 
