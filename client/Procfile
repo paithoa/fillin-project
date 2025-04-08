@@ -1,1 +1,1 @@
-web: npx serve -s web-build -l $PORT 
+web: NODE_ENV=production npx serve -s web-build -l $PORT 
