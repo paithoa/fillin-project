@@ -16,7 +16,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import PostCard from '../components/PostCard';
 import PostDetailModal from '../components/PostDetailModal';
-import { fetchPosts } from '../services/api';
+import { getPosts } from '../services/api';
 import { AuthContext } from '../context/AuthContext';
 import AddPostScreen from './AddPostScreen';
 
@@ -135,7 +135,7 @@ const HomeScreen = ({ navigation }) => {
   const loadPosts = async () => {
     setLoading(true);
     try {
-      const data = await fetchPosts();
+      const data = await getPosts();
       if (data && data.length > 0) {
         // Sort posts by date - newest first
         const sortedPosts = [...data].sort((a, b) => {

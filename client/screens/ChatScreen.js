@@ -28,9 +28,6 @@ const ChatScreen = ({ navigation, route }) => {
   const [refreshing, setRefreshing] = useState(false);
   const [recipient, setRecipient] = useState(null);
   const [post, setPost] = useState(null);
-  const [replyingTo, setReplyingTo] = useState(null);
-  const [selectedMessage, setSelectedMessage] = useState(null);
-  const [showMessageOptions, setShowMessageOptions] = useState(false);
   
   // Get information from route params
   const recipientFromParams = route.params?.recipient;
@@ -47,133 +44,51 @@ const ChatScreen = ({ navigation, route }) => {
     }
   }, [recipientFromParams, postFromParams]);
 
-  // Add focus listener to refresh messages when screen comes into focus
-  useEffect(() => {
-    const unsubscribe = navigation.addListener('focus', () => {
-      if (userInfo && recipient?._id) {
-        fetchMessages();
-      }
-    });
-
-    return unsubscribe;
-  }, [navigation, userInfo, recipient]);
-
   useEffect(() => {
     if (userInfo) {
+      // Simplified: no premium checks
       fetchMessages();
     }
 
     // Set the header title to the recipient's name
     navigation.setOptions({
       title: recipient?.name || 'Chat',
-      headerRight: () => (
-        <TouchableOpacity
-          style={styles.resetButton}
-          onPress={handleResetMessages}
-        >
-          <Ionicons name="refresh" size={24} color="#0066CC" />
-        </TouchableOpacity>
-      ),
     });
+
+    // Load dummy messages for demo if we don't have real ones
+    setLoading(true);
+    setTimeout(() => {
+      setMessages(prevMessages => {
+        // Only load demo messages if we don't have any
+        if (prevMessages.length === 0) {
+          return [
+            {
+              _id: '1',
+              text: `Hi there! I'm interested in your post about "${post?.title}"`,
+              createdAt: new Date(),
+              sender: userInfo?._id,
+              user: {
+                _id: userInfo?._id,
+                name: userInfo?.name,
+              },
+            },
+            {
+              _id: '2',
+              text: 'Hi! Thanks for reaching out. Would you like to know more about it?',
+              createdAt: new Date(Date.now() - 1000 * 60),
+              sender: recipient?._id,
+              user: {
+                _id: recipient?._id,
+                name: recipient?.name,
+              },
+            },
+          ];
+        }
+        return prevMessages;
+      });
+      setLoading(false);
+    }, 1000);
   }, [navigation, recipient, userInfo]);
-
-  const handleResetMessages = async () => {
-    Alert.alert(
-      'Reset Messages',
-      'Are you sure you want to clear this conversation? This action cannot be undone.',
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-        {
-          text: 'Reset',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              setLoading(true);
-              // Clear local messages
-              setMessages([]);
-              
-              // Call API to reset messages
-              try {
-                await axios.delete(`${API_URL}/api/messages/${recipient._id}`, {
-                  headers: { Authorization: `Bearer ${userInfo.token}` },
-                });
-                Alert.alert('Success', 'Messages have been reset successfully');
-              } catch (error) {
-                console.log('Error resetting messages on server:', error);
-                Alert.alert('Error', 'Failed to reset messages on server');
-              }
-              
-              // Fetch fresh messages
-              await fetchMessages();
-            } catch (error) {
-              console.log('Error resetting messages:', error);
-              Alert.alert('Error', 'Failed to reset messages');
-            } finally {
-              setLoading(false);
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  const handleDeleteMessage = async (messageId) => {
-    Alert.alert(
-      'Delete Message',
-      'Are you sure you want to delete this message?',
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              setLoading(true);
-              
-              // Remove from local messages
-              setMessages(prevMessages => 
-                prevMessages.filter(msg => msg._id !== messageId)
-              );
-              
-              // If you have a backend API endpoint for deleting messages
-              try {
-                await axios.delete(`${API_URL}/api/messages/single/${messageId}`, {
-                  headers: { Authorization: `Bearer ${userInfo.token}` },
-                });
-              } catch (error) {
-                console.log('Error deleting message on server:', error);
-              }
-              
-              setShowMessageOptions(false);
-              setSelectedMessage(null);
-            } catch (error) {
-              console.log('Error deleting message:', error);
-              Alert.alert('Error', 'Failed to delete message');
-            } finally {
-              setLoading(false);
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  const handleReplyToMessage = (message) => {
-    setReplyingTo(message);
-    setShowMessageOptions(false);
-    // Focus on text input
-    // This could be improved by using a ref to the TextInput
-  };
-
-  const cancelReply = () => {
-    setReplyingTo(null);
-  };
 
   const checkAccess = () => {
     // Just check if user is logged in - no premium checks
@@ -219,20 +134,21 @@ const ChatScreen = ({ navigation, route }) => {
   const handleSendMessage = async () => {
     if (!newMessage.trim()) return;
     
+    // No premium check needed - allow all logged in users to send messages
+    // NOTE FOR FUTURE: Premium checks could be implemented here
+
     if (postFromParams && recipient?._id) {
       const messageData = {
         recipientId: recipient._id,
         postId: postFromParams._id,
         text: newMessage.trim(),
-        replyToId: replyingTo?._id, // Add reference to replied message
       };
 
       setLoading(true);
       try {
-        const result = await sendMessage(recipient._id, postFromParams._id, newMessage.trim(), replyingTo?._id);
+        const result = await sendMessage(recipient._id, postFromParams._id, newMessage.trim());
         if (result.success) {
           setNewMessage('');
-          setReplyingTo(null); // Clear reply status
           
           // Add message to the list immediately for better UX
           const newMessageObj = {
@@ -241,14 +157,13 @@ const ChatScreen = ({ navigation, route }) => {
             createdAt: new Date(),
             sender: { _id: userInfo._id, name: userInfo.name },
             receiver: { _id: recipient._id, name: recipient.name },
-            post: postFromParams,
-            replyTo: replyingTo, // Include reply reference
+            post: postFromParams
           };
           
           setMessages(prev => [newMessageObj, ...prev]);
           
           // Fetch fresh messages to ensure consistency
-          await fetchMessages();
+          fetchMessages();
         } else {
           Alert.alert('Error', result.message || 'Failed to send message');
         }
@@ -280,15 +195,11 @@ const ChatScreen = ({ navigation, route }) => {
     const isMyMessage = item.sender._id === userInfo?._id;
 
     return (
-      <TouchableOpacity
+      <View
         style={[
           styles.messageContainer,
           isMyMessage ? styles.myMessage : styles.theirMessage,
         ]}
-        onLongPress={() => {
-          setSelectedMessage(item);
-          setShowMessageOptions(true);
-        }}
       >
         <View style={styles.messageHeader}>
           <Text style={styles.senderName}>
@@ -298,61 +209,15 @@ const ChatScreen = ({ navigation, route }) => {
             {new Date(item.createdAt).toLocaleString()}
           </Text>
         </View>
-        
-        {item.replyTo && (
-          <View style={styles.replyToContainer}>
-            <View style={styles.replyLine} />
-            <Text style={styles.replyToText} numberOfLines={1}>
-              Reply to: {item.replyTo.content}
-            </Text>
-          </View>
-        )}
-        
         <Text style={styles.messageContent}>{item.content}</Text>
-        
         {item.post && (
           <Text style={styles.postReference}>
             Re: {item.post.title}
           </Text>
         )}
-      </TouchableOpacity>
+      </View>
     );
   };
-
-  const renderMessageOptionsModal = () => (
-    <Modal
-      visible={showMessageOptions}
-      transparent={true}
-      animationType="fade"
-      onRequestClose={() => setShowMessageOptions(false)}
-    >
-      <TouchableOpacity 
-        style={styles.modalOverlay}
-        activeOpacity={1}
-        onPress={() => setShowMessageOptions(false)}
-      >
-        <View style={styles.messageOptionsContainer}>
-          <TouchableOpacity 
-            style={styles.messageOptionItem}
-            onPress={() => handleReplyToMessage(selectedMessage)}
-          >
-            <Ionicons name="arrow-undo-outline" size={24} color="#0066CC" />
-            <Text style={styles.messageOptionText}>Reply</Text>
-          </TouchableOpacity>
-          
-          {selectedMessage && selectedMessage.sender._id === userInfo._id && (
-            <TouchableOpacity 
-              style={styles.messageOptionItem}
-              onPress={() => handleDeleteMessage(selectedMessage._id)}
-            >
-              <Ionicons name="trash-outline" size={24} color="#FF3B30" />
-              <Text style={[styles.messageOptionText, { color: '#FF3B30' }]}>Delete</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      </TouchableOpacity>
-    </Modal>
-  );
 
   return (
     <SafeAreaView style={styles.container}>
@@ -363,8 +228,6 @@ const ChatScreen = ({ navigation, route }) => {
           </Text>
         </View>
       )}
-
-      {renderMessageOptionsModal()}
 
       <KeyboardAvoidingView
         style={styles.container}
@@ -405,20 +268,6 @@ const ChatScreen = ({ navigation, route }) => {
             </View>
           }
         />
-
-        {replyingTo && (
-          <View style={styles.replyingContainer}>
-            <View style={styles.replyingContent}>
-              <Text style={styles.replyingLabel}>Replying to:</Text>
-              <Text style={styles.replyingText} numberOfLines={1}>
-                {replyingTo.content}
-              </Text>
-            </View>
-            <TouchableOpacity onPress={cancelReply}>
-              <Ionicons name="close-circle" size={20} color="#666" />
-            </TouchableOpacity>
-          </View>
-        )}
 
         <View style={styles.inputContainer}>
           <TextInput
@@ -616,6 +465,137 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 5,
   },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    borderRadius: 16,
+    width: '85%',
+    maxWidth: 400,
+    overflow: 'hidden',
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  modalBody: {
+    padding: 20,
+    alignItems: 'center',
+  },
+  modalIcon: {
+    marginBottom: 15,
+  },
+  modalText: {
+    fontSize: 16,
+    color: '#333',
+    textAlign: 'center',
+    marginBottom: 20,
+    lineHeight: 24,
+  },
+  phoneInputContainer: {
+    width: '100%',
+    marginBottom: 20,
+  },
+  phoneLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 8,
+    color: '#333',
+  },
+  phoneInput: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    width: '100%',
+  },
+  phoneDisclaimer: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 5,
+    fontStyle: 'italic',
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginTop: 10,
+  },
+  cancelButton: {
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    flex: 1,
+    marginRight: 10,
+    alignItems: 'center',
+  },
+  cancelButtonText: {
+    color: '#333',
+    fontWeight: '600',
+  },
+  startTrialButton: {
+    backgroundColor: '#0066CC',
+    padding: 12,
+    borderRadius: 8,
+    flex: 1.5,
+    alignItems: 'center',
+  },
+  startTrialButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f0f0f0',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+  },
+  statusText: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 4,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  premiumBadge: {
+    backgroundColor: '#FFF8E1',
+    padding: 4,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  trialBadge: {
+    backgroundColor: '#E3F2FD',
+    padding: 4,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   postInfoContainer: {
     backgroundColor: 'white',
     padding: 10,
@@ -629,81 +609,6 @@ const styles = StyleSheet.create({
   postInfoTitle: {
     fontWeight: 'bold',
     color: '#333',
-  },
-  resetButton: {
-    marginRight: 15,
-    padding: 5,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  messageOptionsContainer: {
-    backgroundColor: 'white',
-    borderRadius: 10,
-    padding: 15,
-    width: '70%',
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-  },
-  messageOptionItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-  },
-  messageOptionText: {
-    fontSize: 16,
-    marginLeft: 10,
-    color: '#333',
-  },
-  replyingContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#f3f3f3',
-    padding: 10,
-    alignItems: 'center',
-    borderTopWidth: 1,
-    borderTopColor: '#eee',
-    justifyContent: 'space-between',
-  },
-  replyingContent: {
-    flex: 1,
-    marginRight: 10,
-  },
-  replyingLabel: {
-    fontSize: 12,
-    color: '#666',
-    fontWeight: 'bold',
-  },
-  replyingText: {
-    fontSize: 14,
-    color: '#333',
-  },
-  replyToContainer: {
-    backgroundColor: 'rgba(0, 0, 0, 0.05)',
-    padding: 5,
-    borderRadius: 5,
-    marginBottom: 5,
-    paddingLeft: 10,
-    borderLeftWidth: 3,
-    borderLeftColor: '#0066CC',
-  },
-  replyToText: {
-    fontSize: 12,
-    color: '#666',
-    fontStyle: 'italic',
-  },
-  replyLine: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: 3,
-    backgroundColor: '#0066CC',
   },
 });
 

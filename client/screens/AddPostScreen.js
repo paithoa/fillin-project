@@ -26,6 +26,7 @@ import LoginModal from '../components/LoginModal';
 const PostSchema = Yup.object().shape({
   title: Yup.string().required('Title is required'),
   description: Yup.string().required('Description is required'),
+  sportType: Yup.string().required('Sport type is required'),
   location: Yup.string(),
   playersNeeded: Yup.string().when('lookingToJoin', {
     is: false,
@@ -251,6 +252,7 @@ const AddPostScreen = ({ navigation, isModal = false, onPostCreated }) => {
         playersNeeded: numericPlayersNeeded,
         image: finalImage,
         phone: values.phone || userInfo?.phone,
+        sportType: values.sportType || 'general' // Ensure sportType is always present
       };
       
       const result = await createPost(postData);
@@ -296,6 +298,7 @@ const AddPostScreen = ({ navigation, isModal = false, onPostCreated }) => {
           initialValues={{
             title: '',
             description: '',
+            sportType: '',
             playersNeeded: '',
             lookingToJoin: false,
             location: '',
@@ -328,6 +331,26 @@ const AddPostScreen = ({ navigation, isModal = false, onPostCreated }) => {
                     if (text.length > 5) {
                       // Only suggest images when title is meaningful
                       setCurrentTitle(text);
+                      
+                      // Auto-detect sport type if not already set
+                      if (!values.sportType) {
+                        const lowerText = text.toLowerCase();
+                        if (lowerText.includes('soccer')) {
+                          setFieldValue('sportType', 'Soccer');
+                        } else if (lowerText.includes('basketball')) {
+                          setFieldValue('sportType', 'Basketball');
+                        } else if (lowerText.includes('volleyball')) {
+                          setFieldValue('sportType', 'Volleyball');
+                        } else if (lowerText.includes('tennis')) {
+                          setFieldValue('sportType', 'Tennis');
+                        } else if (lowerText.includes('baseball')) {
+                          setFieldValue('sportType', 'Baseball');
+                        } else if (lowerText.includes('football')) {
+                          setFieldValue('sportType', 'Football');
+                        } else if (lowerText.includes('swim')) {
+                          setFieldValue('sportType', 'Swimming');
+                        }
+                      }
                     }
                   }}
                   onBlur={handleBlur('title')}
@@ -358,6 +381,20 @@ const AddPostScreen = ({ navigation, isModal = false, onPostCreated }) => {
                 />
                 {errors.description && touched.description && (
                   <Text style={styles.error}>{errors.description}</Text>
+                )}
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Sport Type</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter sport type (e.g., Soccer, Basketball, Tennis)"
+                  value={values.sportType}
+                  onChangeText={handleChange('sportType')}
+                  onBlur={handleBlur('sportType')}
+                />
+                {errors.sportType && touched.sportType && (
+                  <Text style={styles.error}>{errors.sportType}</Text>
                 )}
               </View>
 

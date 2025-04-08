@@ -45,6 +45,16 @@ const ChatListScreen = ({ navigation, route }) => {
     return unsubscribe;
   }, [navigation, route]);
 
+  // Add a listener for route.params updates which is used for message sending notifications
+  useEffect(() => {
+    if (route.params?.messageUpdated && userInfo) {
+      console.log('Message update detected, refreshing conversations');
+      fetchConversations();
+      // Clear the param after handling to avoid repeated refreshes
+      navigation.setParams({ messageUpdated: undefined });
+    }
+  }, [route.params?.messageUpdated]);
+
   // New effect to handle selected user and post for new conversation
   useEffect(() => {
     if (route.params?.selectedUser && route.params?.selectedPost && route.params?.showComposeMessage) {
@@ -78,27 +88,31 @@ const ChatListScreen = ({ navigation, route }) => {
         if (apiConversations && apiConversations.length > 0) {
           console.log('Successfully fetched conversations from API');
           
-          // Format the conversations to match our UI structure
-          const formattedConversations = apiConversations.map(message => {
-            // Determine if the current user is the sender or recipient
-            const otherParty = message.sender._id === userInfo._id ? 
-              message.receiver : message.sender;
-              
+          // Process the new API response format
+          // Each conversation in the API has user, messages array, lastMessage, unreadCount, and post
+          const formattedConversations = apiConversations.map(conversation => {
+            // Ensure we have all required data
+            if (!conversation.user || !conversation.lastMessage || !conversation.post) {
+              console.log('Conversation has incomplete data:', conversation);
+              return null;
+            }
+            
             return {
-              _id: `${otherParty._id}_${message.post._id}`,
-              user: otherParty,
-              post: message.post,
-              lastMessage: message,
-              messages: [message], // We'll get more messages when user opens the conversation
-              unreadCount: message.receiver._id === userInfo._id && !message.isRead ? 1 : 0
+              _id: `${conversation.user._id}_${conversation.post._id}`,
+              user: conversation.user,
+              post: conversation.post,
+              lastMessage: conversation.lastMessage,
+              messages: conversation.messages || [conversation.lastMessage],
+              unreadCount: conversation.unreadCount || 0
             };
-          });
+          }).filter(Boolean); // Remove any null entries
           
           // Sort by most recent message
           formattedConversations.sort((a, b) => 
             new Date(b.lastMessage?.createdAt) - new Date(a.lastMessage?.createdAt)
           );
           
+          console.log('Formatted conversations:', formattedConversations.length);
           setConversations(formattedConversations);
           setLoading(false);
           setRefreshing(false);
@@ -110,16 +124,31 @@ const ChatListScreen = ({ navigation, route }) => {
       
       // If the API call fails, fall back to AsyncStorage
       // This is a fallback for demonstration when not connected to backend
-      const savedConversations = await AsyncStorage.getItem('demo_conversations');
-      
-      if (savedConversations) {
-        const parsedConversations = JSON.parse(savedConversations);
-        if (parsedConversations && parsedConversations.length > 0) {
-          setConversations(parsedConversations);
-          setLoading(false);
-          setRefreshing(false);
-          return;
+      try {
+        const savedConversations = await AsyncStorage.getItem('demo_conversations');
+        
+        if (savedConversations) {
+          try {
+            const parsedConversations = JSON.parse(savedConversations);
+            if (parsedConversations && Array.isArray(parsedConversations) && parsedConversations.length > 0) {
+              // Validate each conversation has required fields
+              const validConversations = parsedConversations.filter(conv => 
+                conv && conv.user && conv.user._id && conv.post && conv.post._id
+              );
+              
+              setConversations(validConversations);
+              setLoading(false);
+              setRefreshing(false);
+              return;
+            }
+          } catch (parseError) {
+            console.log('Error parsing saved conversations:', parseError);
+            // If there's an error parsing, continue to create demo conversation
+          }
         }
+      } catch (storageError) {
+        console.log('Error accessing local storage:', storageError);
+        // Continue to create demo conversation
       }
       
       // Create demo conversation if nothing found
@@ -176,6 +205,20 @@ const ChatListScreen = ({ navigation, route }) => {
   };
 
   const goToChat = async (conversation) => {
+    // Validate conversation object has required properties
+    if (!conversation || !conversation.user || !conversation.post) {
+      console.log('Invalid conversation object:', conversation);
+      Alert.alert('Error', 'Cannot open this conversation. Data is incomplete.');
+      return;
+    }
+
+    // Ensure user and post have _id properties
+    if (!conversation.user._id || !conversation.post._id) {
+      console.log('Conversation has missing _id properties:', conversation);
+      Alert.alert('Error', 'Cannot open this conversation. ID information is missing.');
+      return;
+    }
+
     // Set up the conversation for viewing/replying
     setSelectedUser(conversation.user);
     setSelectedPost(conversation.post);
@@ -218,68 +261,27 @@ const ChatListScreen = ({ navigation, route }) => {
       return;
     }
 
+    // Store the message before clearing the input for better UX
+    const messageText = newMessage.trim();
+    setNewMessage('');
+    
+    // Create a temporary message to show immediately
+    const tempMessage = {
+      _id: `local_msg_${Date.now()}`,
+      content: messageText,
+      createdAt: new Date().toISOString(),
+      sender: { 
+        _id: userInfo._id, 
+        name: userInfo.name,
+        email: userInfo.email 
+      },
+      receiver: selectedUser,
+      post: selectedPost,
+      sending: true
+    };
+    
     try {
-      // First try to send via API
-      const messageData = {
-        recipient: selectedUser._id,
-        content: newMessage.trim(),
-        post: selectedPost._id
-      };
-      
-      console.log('Sending message via API:', messageData);
-      
-      let response;
-      try {
-        response = await sendDirectMessage(messageData);
-        console.log('API response:', response);
-      } catch (apiError) {
-        console.log('Error sending via API, using local fallback:', apiError);
-        
-        // Create a local message object as fallback
-        response = {
-          _id: `local_msg_${Date.now()}`,
-          content: newMessage.trim(),
-          createdAt: new Date().toISOString(),
-          sender: { 
-            _id: userInfo._id, 
-            name: userInfo.name,
-            email: userInfo.email 
-          },
-          receiver: selectedUser,
-          post: selectedPost
-        };
-        
-        // Save to local storage as fallback
-        const savedConversations = await AsyncStorage.getItem('demo_conversations');
-        let localConversations = savedConversations ? JSON.parse(savedConversations) : [];
-        
-        // Find existing conversation or create new one
-        const conversationId = `${selectedUser._id}_${selectedPost._id}`;
-        const existingConvIndex = localConversations.findIndex(c => 
-          c.user._id === selectedUser._id && c.post._id === selectedPost._id
-        );
-        
-        if (existingConvIndex !== -1) {
-          // Update existing conversation
-          localConversations[existingConvIndex].lastMessage = response;
-          localConversations[existingConvIndex].messages.unshift(response);
-        } else {
-          // Create new conversation
-          const newConversation = {
-            _id: conversationId,
-            user: selectedUser,
-            lastMessage: response,
-            messages: [response],
-            post: selectedPost,
-            unreadCount: 0
-          };
-          localConversations.unshift(newConversation);
-        }
-        
-        await AsyncStorage.setItem('demo_conversations', JSON.stringify(localConversations));
-      }
-      
-      // Update UI regardless of source (API or local)
+      // Update UI immediately for better user experience
       // Find existing conversation or create new one
       const conversationId = `${selectedUser._id}_${selectedPost._id}`;
       const existingConvIndex = conversations.findIndex(c => 
@@ -292,9 +294,9 @@ const ChatListScreen = ({ navigation, route }) => {
         // Update existing conversation
         updatedConversations[existingConvIndex] = {
           ...updatedConversations[existingConvIndex],
-          lastMessage: response,
+          lastMessage: tempMessage,
           messages: [
-            response,
+            tempMessage,
             ...(updatedConversations[existingConvIndex].messages || [])
           ]
         };
@@ -303,8 +305,8 @@ const ChatListScreen = ({ navigation, route }) => {
         const newConversation = {
           _id: conversationId,
           user: selectedUser,
-          lastMessage: response,
-          messages: [response],
+          lastMessage: tempMessage,
+          messages: [tempMessage],
           post: selectedPost,
           unreadCount: 0
         };
@@ -313,8 +315,90 @@ const ChatListScreen = ({ navigation, route }) => {
       
       setConversations(updatedConversations);
       
-      // Clear the message input but keep the modal open
-      setNewMessage('');
+      // Now try to send via API
+      const messageData = {
+        recipient: selectedUser._id,
+        content: messageText,
+        post: selectedPost._id
+      };
+      
+      console.log('Sending message via API:', messageData);
+      
+      let response;
+      try {
+        response = await sendDirectMessage(messageData);
+        console.log('API response:', response);
+        
+        // Update the conversation with the actual response
+        const updatedConvs = [...updatedConversations];
+        const convIndex = updatedConvs.findIndex(c => 
+          c.user._id === selectedUser._id && c.post._id === selectedPost._id
+        );
+        
+        if (convIndex !== -1) {
+          // Update the message with the real data from the server
+          updatedConvs[convIndex].lastMessage = {
+            ...response,
+            sender: { 
+              _id: userInfo._id, 
+              name: userInfo.name,
+              email: userInfo.email 
+            },
+            receiver: selectedUser,
+            post: selectedPost
+          };
+          
+          // Update the message in the messages array too
+          const msgIndex = updatedConvs[convIndex].messages.findIndex(
+            msg => msg._id === tempMessage._id
+          );
+          
+          if (msgIndex !== -1) {
+            updatedConvs[convIndex].messages[msgIndex] = {
+              ...response,
+              sender: { 
+                _id: userInfo._id, 
+                name: userInfo.name,
+                email: userInfo.email 
+              },
+              receiver: selectedUser,
+              post: selectedPost
+            };
+          }
+          
+          setConversations(updatedConvs);
+        }
+        
+        console.log('Message sent successfully, keeping chat dialog open');
+        
+      } catch (apiError) {
+        console.log('Error sending via API, using local fallback:', apiError);
+        
+        // Mark the message as failed in the UI
+        const updatedConvs = [...updatedConversations];
+        const convIndex = updatedConvs.findIndex(c => 
+          c.user._id === selectedUser._id && c.post._id === selectedPost._id
+        );
+        
+        if (convIndex !== -1) {
+          // Mark the message as failed
+          const msgIndex = updatedConvs[convIndex].messages.findIndex(
+            msg => msg._id === tempMessage._id
+          );
+          
+          if (msgIndex !== -1) {
+            updatedConvs[convIndex].messages[msgIndex] = {
+              ...updatedConvs[convIndex].messages[msgIndex],
+              sending: false,
+              failed: true
+            };
+          }
+          
+          setConversations(updatedConvs);
+        }
+        
+        Alert.alert('Error', 'Failed to send message. Network issue or server unavailable.');
+      }
       
     } catch (error) {
       console.log('Error saving message:', error);
@@ -378,11 +462,31 @@ const ChatListScreen = ({ navigation, route }) => {
   };
 
   const renderConversationItem = ({ item }) => {
+    // Skip rendering if item doesn't have required properties
+    if (!item || !item.user || !item.lastMessage || !item.post) {
+      console.log('Skipping invalid conversation item:', item);
+      return null;
+    }
+
+    console.log('Rendering conversation:', item._id, 'lastMessage:', item.lastMessage.content);
+    
     const isUnread = item.unreadCount > 0;
     const isSenderMe = item.lastMessage?.sender?._id === userInfo?._id;
+    
+    // Create safe display content with fallbacks for missing data
+    const messageContent = item.lastMessage?.content || 'No message content';
     const messagePreview = isSenderMe 
-      ? `You: ${item.lastMessage?.content}` 
-      : item.lastMessage?.content;
+      ? "You: " + messageContent
+      : messageContent;
+    
+    // Check if a message is still sending or failed
+    const isSending = item.lastMessage?.sending;
+    const isFailed = item.lastMessage?.failed;
+
+    // Safely get creation date with fallback
+    const messageDate = item.lastMessage?.createdAt 
+      ? new Date(item.lastMessage.createdAt)
+      : new Date();
 
     return (
       <TouchableOpacity
@@ -397,35 +501,50 @@ const ChatListScreen = ({ navigation, route }) => {
             />
           ) : (
             <View style={styles.avatarPlaceholder}>
-              <Ionicons name="person" size={24} color="#ccc" />
+              <Ionicons name="person" size={20} color="#999" />
             </View>
           )}
+          {isUnread && <View style={styles.unreadDot} />}
         </View>
-        
-        <View style={styles.conversationContent}>
+
+        <View style={styles.conversationInfo}>
           <View style={styles.conversationHeader}>
-            <Text style={[styles.userName, isUnread && styles.unreadText]}>
-              {item.user?.name || 'Unknown User'}
-            </Text>
-            <Text style={styles.timestamp}>
-              {new Date(item.lastMessage?.createdAt).toLocaleDateString()}
+            <Text style={styles.username}>{item.user?.name || 'Unknown User'}</Text>
+            <Text style={styles.messageTime}>
+              {messageDate.toLocaleTimeString([], {
+                hour: '2-digit',
+                minute: '2-digit'
+              })}
             </Text>
           </View>
-          
+
+          <View style={styles.messagePreviewContainer}>
+            <Text 
+              style={[
+                styles.messagePreview, 
+                isUnread && styles.unreadText,
+                isFailed && styles.failedText
+              ]} 
+              numberOfLines={1}
+            >
+              {isSending && '🕒 '}
+              {isFailed && '❌ '}
+              {messagePreview}
+            </Text>
+            
+            {isUnread && item.unreadCount > 0 && (
+              <View style={styles.unreadBadge}>
+                <Text style={styles.unreadCount}>
+                  {item.unreadCount > 99 ? '99+' : item.unreadCount}
+                </Text>
+              </View>
+            )}
+          </View>
+
           <Text style={styles.postTitle} numberOfLines={1}>
             Re: {item.post?.title || 'Unknown Post'}
           </Text>
-          
-          <Text style={[styles.messagePreview, isUnread && styles.unreadText]} numberOfLines={1}>
-            {messagePreview || 'No messages yet'}
-          </Text>
         </View>
-        
-        {isUnread && (
-          <View style={styles.unreadBadge}>
-            <Text style={styles.unreadBadgeText}>{item.unreadCount}</Text>
-          </View>
-        )}
       </TouchableOpacity>
     );
   };
@@ -441,15 +560,15 @@ const ChatListScreen = ({ navigation, route }) => {
     const conversationMessages = selectedConversation?.messages || [];
     
     return (
-      <Modal
-        visible={showComposeModal}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setShowComposeModal(false)}
-      >
+    <Modal
+      visible={showComposeModal}
+      transparent={true}
+      animationType="slide"
+      onRequestClose={() => setShowComposeModal(false)}
+    >
         <View style={styles.fullScreenModalOverlay}>
           <View style={styles.chatModalContent}>
-            <View style={styles.composeModalHeader}>
+          <View style={styles.composeModalHeader}>
               <View style={styles.chatHeaderInfo}>
                 {selectedUser?.profileImage ? (
                   <Image
@@ -462,9 +581,9 @@ const ChatListScreen = ({ navigation, route }) => {
                   </View>
                 )}
                 <View style={styles.chatHeaderTextContainer}>
-                  <Text style={styles.composeModalTitle}>
+            <Text style={styles.composeModalTitle}>
                     {selectedUser?.name || 'Chat'}
-                  </Text>
+            </Text>
                   {selectedPost && (
                     <Text style={styles.chatHeaderPostTitle} numberOfLines={1}>
                       Re: {selectedPost.title}
@@ -472,18 +591,25 @@ const ChatListScreen = ({ navigation, route }) => {
                   )}
                 </View>
               </View>
-              <TouchableOpacity onPress={() => setShowComposeModal(false)}>
-                <Ionicons name="close" size={24} color="#333" />
-              </TouchableOpacity>
-            </View>
-            
+            <TouchableOpacity onPress={() => setShowComposeModal(false)}>
+              <Ionicons name="close" size={24} color="#333" />
+            </TouchableOpacity>
+          </View>
+          
             <View style={styles.chatMessagesContainer}>
               {conversationMessages.length > 0 ? (
                 <FlatList
                   data={conversationMessages}
-                  keyExtractor={(item) => item._id}
+                  keyExtractor={(item) => item._id || `msg_${Date.now()}_${Math.random()}`}
                   renderItem={({ item }) => {
+                    // Skip rendering if item doesn't have required properties
+                    if (!item || !item.content) {
+                      return null;
+                    }
+                    
                     const isFromMe = item.sender?._id === userInfo?._id;
+                    const messageTime = item.createdAt ? new Date(item.createdAt) : new Date();
+                    
                     return (
                       <View style={[
                         styles.messageBubble,
@@ -499,7 +625,7 @@ const ChatListScreen = ({ navigation, route }) => {
                           styles.messageTime,
                           isFromMe ? styles.myMessageTime : styles.theirMessageTime
                         ]}>
-                          {new Date(item.createdAt).toLocaleTimeString([], 
+                          {messageTime.toLocaleTimeString([], 
                             { hour: '2-digit', minute: '2-digit' }
                           )}
                         </Text>
@@ -516,38 +642,38 @@ const ChatListScreen = ({ navigation, route }) => {
                   <Text style={styles.noMessagesSubtext}>
                     Start the conversation below
                   </Text>
-                </View>
-              )}
+              </View>
+            )}
             </View>
             
             <View style={styles.chatInputContainer}>
-              <TextInput
+            <TextInput
                 style={styles.chatInput}
-                placeholder="Type your message here..."
-                value={newMessage}
-                onChangeText={setNewMessage}
-                multiline
+              placeholder="Type your message here..."
+              value={newMessage}
+              onChangeText={setNewMessage}
+              multiline
                 maxHeight={100}
-              />
-              <TouchableOpacity
-                style={[
-                  styles.sendButton,
-                  !newMessage.trim() && styles.sendButtonDisabled
-                ]}
-                onPress={handleSendNewMessage}
-                disabled={!newMessage.trim()}
-              >
+            />
+            <TouchableOpacity
+              style={[
+                styles.sendButton,
+                !newMessage.trim() && styles.sendButtonDisabled
+              ]}
+              onPress={handleSendNewMessage}
+              disabled={!newMessage.trim()}
+            >
                 <Ionicons 
                   name="send" 
                   size={20} 
                   color={newMessage.trim() ? "white" : "#999"} 
                 />
-              </TouchableOpacity>
-            </View>
+            </TouchableOpacity>
           </View>
         </View>
-      </Modal>
-    );
+        </View>
+    </Modal>
+  );
   };
 
   if (loading && !refreshing) {
@@ -574,16 +700,16 @@ const ChatListScreen = ({ navigation, route }) => {
       />
       
       {/* Chat buttons - show for all logged in users */}
-      <TouchableOpacity
+      {/* <TouchableOpacity
         style={styles.newChatButton}
         onPress={() => navigation.navigate('Home')}
       >
         <Ionicons name="add" size={24} color="white" />
         <Text style={styles.newChatButtonText}>Find Posts</Text>
       </TouchableOpacity>
-      
+       */}
       {/* Add a reset button for testing */}
-      <TouchableOpacity
+      {/* <TouchableOpacity
         style={styles.resetButton}
         onPress={() => {
           Alert.alert(
@@ -598,7 +724,7 @@ const ChatListScreen = ({ navigation, route }) => {
       >
         <Ionicons name="trash" size={20} color="white" />
         <Text style={styles.resetButtonText}>Reset Messages</Text>
-      </TouchableOpacity>
+      </TouchableOpacity> */}
     </View>
   );
 };
@@ -635,10 +761,10 @@ const styles = StyleSheet.create({
   },
   conversationItem: {
     flexDirection: 'row',
-    padding: 16,
+    padding: 15,
     backgroundColor: 'white',
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    borderBottomColor: '#eee',
   },
   unreadItem: {
     backgroundColor: '#f0f7ff',
@@ -659,7 +785,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  conversationContent: {
+  conversationInfo: {
     flex: 1,
   },
   conversationHeader: {
@@ -667,27 +793,34 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 4,
   },
-  userName: {
+  username: {
     fontSize: 16,
     fontWeight: '600',
     color: '#333',
   },
-  timestamp: {
+  messageTime: {
     fontSize: 12,
     color: '#888',
   },
-  postTitle: {
-    fontSize: 14,
-    color: '#0066CC',
+  messagePreviewContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 4,
+    flex: 1,
   },
   messagePreview: {
     fontSize: 14,
     color: '#666',
+    flex: 1,
+    marginRight: 8,
   },
   unreadText: {
     fontWeight: 'bold',
-    color: '#333',
+    color: '#000',
+  },
+  failedText: {
+    color: 'red',
   },
   unreadBadge: {
     backgroundColor: '#0066CC',
@@ -699,10 +832,15 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     alignSelf: 'center',
   },
-  unreadBadgeText: {
+  unreadCount: {
     color: 'white',
     fontSize: 12,
     fontWeight: 'bold',
+  },
+  postTitle: {
+    fontSize: 14,
+    color: '#0066CC',
+    marginBottom: 4,
   },
   centeredContainer: {
     flex: 1,
@@ -1118,6 +1256,17 @@ const styles = StyleSheet.create({
     height: '100%',
     display: 'flex',
     flexDirection: 'column',
+  },
+  unreadDot: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 12,
+    height: 12,
+    backgroundColor: '#0066CC',
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: 'white',
   },
 });
 

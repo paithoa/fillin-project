@@ -31,22 +31,22 @@ const PostCard = ({ post, onPress }) => {
             {post.location}
           </Text>
         </View>
+        <View style={styles.infoRow}>
+          <Ionicons name="people-outline" size={14} color="#555" />
+          <Text style={styles.infoText}>
+            {post.lookingToJoin
+              ? 'Looking to join a team'
+              : `Looking for ${post.playersNeeded || 0} player${
+                  post.playersNeeded !== 1 ? 's' : ''
+                }`}
+          </Text>
+        </View>
         {post.grade && (
           <View style={styles.infoRow}>
             <Ionicons name="star-outline" size={14} color="#555" />
             <Text style={styles.infoText}>Grade: {post.grade}</Text>
           </View>
         )}
-        <View style={styles.infoRow}>
-          <Ionicons name="people-outline" size={14} color="#555" />
-          <Text style={styles.infoText}>
-            {post.lookingToJoin
-              ? 'Looking to join a team'
-              : `Looking for ${post.playersNeeded} player${
-                  post.playersNeeded !== 1 ? 's' : ''
-                }`}
-          </Text>
-        </View>
         <View style={styles.footer}>
           <Text style={styles.date}>{formatDate(post.createdAt)}</Text>
           <Text style={styles.userName}>{post.user?.name || 'Anonymous'}</Text>

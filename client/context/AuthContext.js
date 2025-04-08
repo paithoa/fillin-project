@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { Alert } from 'react-native';
 import { API_URL } from '../config';
+import { login as apiLogin, register as apiRegister } from '../services/api';
 
 export const AuthContext = createContext();
 
@@ -22,24 +23,35 @@ export const AuthProvider = ({ children }) => {
       
       try {
         // Make a real API call to the backend for authentication
-        const response = await axios.post(`${API_URL}/api/users/login`, {
-          email,
-          password
-        });
-        
-        // If API call fails, it will throw an error and go to catch block
-        const userData = response.data;
+        const userData = await apiLogin({ email, password });
         
         console.log('Login API response successful:', userData);
         
+        // Ensure user data is properly structured
+        if (!userData.user) {
+          userData.user = {
+            _id: userData._id,
+            name: userData.name,
+            email: userData.email,
+            profileImage: userData.profileImage,
+            isPremium: userData.isPremium,
+            createdAt: userData.createdAt || new Date().toISOString()
+          };
+        }
+        
+        // Ensure the user info has createdAt
+        if (!userData.user.createdAt) {
+          userData.user.createdAt = new Date().toISOString();
+        }
+        
         // Save the user data and token
-        setUserInfo(userData);
+        setUserInfo(userData.user);
         setUserToken(userData.token);
         
-        await AsyncStorage.setItem('userInfo', JSON.stringify(userData));
+        await AsyncStorage.setItem('userInfo', JSON.stringify(userData.user));
         await AsyncStorage.setItem('userToken', userData.token);
         
-        return { success: true, data: userData };
+        return { success: true, data: userData.user };
       } catch (apiError) {
         console.log('API login error, falling back to demo mode:', apiError);
         
@@ -62,6 +74,9 @@ export const AuthProvider = ({ children }) => {
           token: 'demo_token_' + Date.now(), // Simple token for demo
           profileImage: null,
           isPremium: true, // Set everyone to premium for now to enable chat
+          createdAt: new Date().toISOString(),
+          bio: 'Demo user profile',
+          phone: '555-123-4567'
         };
         
         // Special case for test123 user
@@ -107,45 +122,61 @@ export const AuthProvider = ({ children }) => {
 
   const register = async (userData) => {
     try {
-      const { name, email, password, phone } = userData;
-      
       // Clear state
       setUserInfo(null);
       setUserToken(null);
       setIsLoading(true);
       
-      // Demo: Simulate API call with delay
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // In production, you would make an API call like:
-      // const response = await axios.post(`${API_URL}/api/users/register`, {
-      //   name, email, password, phone
-      // });
-      
-      // Demo: Check if the email is already in use
-      if (email === 'test@example.com') {
+      try {
+        // Try to make a real API call
+        const response = await apiRegister(userData);
+        
+        console.log('Registration API response successful:', response);
+        
+        // Ensure user data is properly structured
+        const user = response.user || response;
+        if (!user.createdAt) {
+          user.createdAt = new Date().toISOString();
+        }
+        
+        // Save the user data and token
+        setUserInfo(user);
+        setUserToken(response.token);
+        
+        await AsyncStorage.setItem('userInfo', JSON.stringify(user));
+        await AsyncStorage.setItem('userToken', response.token);
+        
         return {
-          success: false,
-          message: 'This email is already registered. Please use a different email or login.'
+          success: true,
+          data: {user, token: response.token}
+        };
+      } catch (apiError) {
+        console.log('API registration error, falling back to demo mode:', apiError);
+        
+        // Demo: Create a fake user with the provided data
+        const newUser = {
+          _id: `user_${Date.now()}`,
+          name: userData.name,
+          email: userData.email,
+          phone: userData.phone || '555-000-0000', // Store phone if provided
+          createdAt: new Date().toISOString(),
+          isPremium: false,
+          bio: userData.bio || 'New SportsConnect user',
+          token: 'demo_token_' + Date.now() // Simple token for demo
+        };
+        
+        // Store user info and token for demo mode
+        setUserInfo(newUser);
+        setUserToken(newUser.token);
+        
+        await AsyncStorage.setItem('userInfo', JSON.stringify(newUser));
+        await AsyncStorage.setItem('userToken', newUser.token);
+        
+        return {
+          success: true,
+          data: {user: newUser, token: newUser.token}
         };
       }
-      
-      // Demo: Create a fake user with the provided data
-      const newUser = {
-        _id: `user_${Date.now()}`,
-        name,
-        email,
-        phone: phone || null, // Store phone if provided
-        createdAt: new Date().toISOString(),
-        isPremium: false
-      };
-      
-      // In a production app, the backend would handle storing the user and sending a verification email
-      
-      return {
-        success: true,
-        data: newUser
-      };
     } catch (error) {
       console.log('Registration Error: ', error);
       return {
@@ -293,16 +324,37 @@ export const AuthProvider = ({ children }) => {
   const isLoggedIn = async () => {
     try {
       setIsLoading(true);
-      let userInfo = await AsyncStorage.getItem('userInfo');
+      console.log('Checking if user is logged in...');
+      
+      let userInfoStr = await AsyncStorage.getItem('userInfo');
       let userToken = await AsyncStorage.getItem('userToken');
 
-      if (userInfo) {
-        userInfo = JSON.parse(userInfo);
-        setUserInfo(userInfo);
-        setUserToken(userToken);
+      console.log('Retrieved from storage - Token exists:', !!userToken);
+      
+      if (userInfoStr && userToken) {
+        try {
+          const userInfo = JSON.parse(userInfoStr);
+          
+          // Ensure user has createdAt
+          if (!userInfo.createdAt) {
+            userInfo.createdAt = new Date().toISOString();
+            await AsyncStorage.setItem('userInfo', JSON.stringify(userInfo));
+          }
+          
+          console.log('User authenticated:', userInfo.name);
+          setUserInfo(userInfo);
+          setUserToken(userToken);
+        } catch (parseError) {
+          console.error('Error parsing user info:', parseError);
+          // Reset corrupted storage
+          await AsyncStorage.removeItem('userInfo');
+          await AsyncStorage.removeItem('userToken');
+        }
+      } else {
+        console.log('No user logged in');
       }
     } catch (error) {
-      console.log(error);
+      console.error('Error checking login status:', error);
     } finally {
       setIsLoading(false);
     }

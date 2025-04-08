@@ -13,7 +13,7 @@ if (Platform.OS === 'ios') {
 
 // You can override this manually if needed (e.g., for physical devices)
 // For physical devices, use your computer's network IP, e.g., 'http://192.168.1.100:5001'
-export const API_URL = baseUrl;
+export const API_URL = 'http://localhost:5001';
 
 // Dummy data for posts if API fails
 export const DUMMY_POSTS = [
@@ -64,4 +64,112 @@ export const DUMMY_POSTS = [
     },
     createdAt: '2023-08-03T12:00:00Z',
   },
+];
+
+// Default sport types for selection
+export const SPORT_TYPES = [
+  'Basketball',
+  'Soccer',
+  'Football',
+  'Baseball',
+  'Tennis',
+  'Volleyball',
+  'Golf',
+  'Swimming',
+  'Running',
+  'Cycling',
+  'Hiking',
+  'Hockey',
+  'Rugby',
+  'Cricket',
+  'Badminton',
+  'Other'
+];
+
+// Sample locations for demo purposes
+export const SAMPLE_LOCATIONS = [
+  'New York, NY',
+  'Los Angeles, CA',
+  'Chicago, IL',
+  'Houston, TX',
+  'Phoenix, AZ',
+  'Philadelphia, PA',
+  'San Antonio, TX',
+  'San Diego, CA',
+  'Dallas, TX',
+  'San Jose, CA'
+];
+
+// Placeholder posts for development/demo
+export const PLACEHOLDER_POSTS = [
+  {
+    _id: 'post1',
+    title: 'Looking for basketball players',
+    description: 'We need 2 players for our recreational basketball team. Games are on Saturdays at 2pm.',
+    sportType: 'Basketball',
+    location: 'Central Park, NY',
+    date: new Date('2023-08-20'),
+    user: {
+      _id: 'user1',
+      name: 'John Smith',
+      email: 'john@example.com',
+      profileImage: 'https://randomuser.me/api/portraits/men/32.jpg'
+    }
+  },
+  {
+    _id: 'post2',
+    title: 'Soccer team seeking goalkeeper',
+    description: 'Our soccer team needs a reliable goalkeeper for the upcoming season. Practice twice a week, games on Sundays.',
+    sportType: 'Soccer',
+    location: 'Prospect Park, Brooklyn',
+    date: new Date('2023-08-25'),
+    user: {
+      _id: 'user2',
+      name: 'Sarah Johnson',
+      email: 'sarah@example.com',
+      profileImage: 'https://randomuser.me/api/portraits/women/44.jpg'
+    }
+  },
+  {
+    _id: 'post3',
+    title: 'Tennis partner wanted',
+    description: 'Looking for an intermediate level tennis partner for weekly games. I have access to courts at my apartment complex.',
+    sportType: 'Tennis',
+    location: 'Midtown, NY',
+    date: new Date('2023-08-15'),
+    user: {
+      _id: 'user3',
+      name: 'Mike Wilson',
+      email: 'mike@example.com',
+      profileImage: 'https://randomuser.me/api/portraits/men/45.jpg'
+    }
+  },
+  {
+    _id: 'post4',
+    title: 'Volleyball team forming',
+    description: 'Starting a new co-ed volleyball team for beginners. No experience necessary, just looking for people who want to have fun and get some exercise.',
+    sportType: 'Volleyball',
+    location: 'Jones Beach, Long Island',
+    date: new Date('2023-09-01'),
+    user: {
+      _id: 'user4',
+      name: 'Lisa Chen',
+      email: 'lisa@example.com',
+      profileImage: 'https://randomuser.me/api/portraits/women/67.jpg'
+    }
+  },
+  {
+    _id: 'post5',
+    title: 'Morning running group',
+    description: 'Join our morning running group! We meet at 6am on Tuesdays and Thursdays for a 5K run. All paces welcome.',
+    sportType: 'Running',
+    location: 'Hudson River Park',
+    date: new Date('2023-08-17'),
+    user: {
+      _id: 'user5',
+      name: 'David Brown',
+      email: 'david@example.com',
+      profileImage: 'https://randomuser.me/api/portraits/men/22.jpg'
+    }
+  }
 ]; 

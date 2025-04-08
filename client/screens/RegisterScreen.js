@@ -143,7 +143,7 @@ const RegisterScreen = ({ navigation }) => {
     }
 
     try {
-      setIsLoading(true);
+      // Don't need to set isLoading here, the register function handles that
       
       // Add phone to registration data if provided
       const userData = { name, email, password };
@@ -179,8 +179,6 @@ const RegisterScreen = ({ navigation }) => {
     } catch (error) {
       setErrorMessage('An error occurred. Please try again.');
       setShowModal(true);
-    } finally {
-      setIsLoading(false);
     }
   };
 
